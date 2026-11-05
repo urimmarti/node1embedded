@@ -5,7 +5,6 @@
  */ 
 
 #define F_CPU 4915200UL
-#define NUM_ITEMS 3
 
 #include "uart.h"
 #include "joystick.h"
@@ -92,69 +91,6 @@ void stdout_redirect(stdout_target_t target) {
 	}
 }
 
-// Opciones del menú principal
-const char* menu_items[] = {
-	"Jugar",
-	"High Scores",
-	"Opciones"
-};
-
-
-void menu_display(uint8_t selected) {
-	stdout_redirect(STDOUT_OLED);
-	
-	oled_pos(0, 0);
-	printf("=== MAIN MENU ===");
-
-	for (uint8_t i = 0; i < NUM_ITEMS; i++) {
-		oled_clear_line(2 + i);
-		oled_pos(2 + i, 0);
-		if (i == selected) {
-			printf("> %s", menu_items[i]);
-			} else {
-			printf("  %s", menu_items[i]);
-		}
-	}
-}
-
-
-uint8_t menu_navigate(void) {
-	uint8_t current_option = 0;
-	joystick_dir_t last_dir = NEUTRAL;
-
-	menu_display(current_option);
-
-	while (1) {
-		// 1. Lectura del Joystick
-		adc_raw_data_t raw = adc_read_all();
-		joystick_position_t joy = joystick_process(raw);
-
-		// 2. Navegación vertical solo en la transición NEUTRAL -> UP/DOWN
-		if (last_dir == NEUTRAL) {
-			if (joy.dir == DOWN) {
-				current_option = (current_option + 1) % NUM_ITEMS;
-				menu_display(current_option);
-				} else if (joy.dir == UP) {
-				current_option = (current_option == 0) ? (NUM_ITEMS - 1) : (current_option - 1);
-				menu_display(current_option);
-			}
-		}
-		last_dir = joy.dir;
-
-		// 3. Comprobar botón del Joystick (ejemplo en PB2 con pull-up activo)
-		if (!(PINB & (1 << PB3))) {
-			_delay_ms(50); // Antirrebote
-			if (!(PINB & (1 << PB3))) {
-				return current_option; // Devuelve la selección al pulsar
-			}
-		}
-
-		_delay_ms(20);
-	}
-}
-
-
-
 
 
 int main(void) {
@@ -200,6 +136,7 @@ int main(void) {
 		
 		can_send(&send_joystick_msg);
 		printf("-> Nodo 1 envió mensaje CAN\n");
+		//printf("X: %d\nY: %d\n", &joystick_data.joy_x, &joystick_data.joy_y);
 
 		// 2. Comprobar si el Nodo 2 nos ha enviado algo
 		if (can_receive(&recv_msg)) {
@@ -207,7 +144,7 @@ int main(void) {
 			recv_msg.id, recv_msg.data[0], recv_msg.data[1], recv_msg.data[2]);
 		}
 
-		_delay_ms(500);
+		_delay_ms(50);
 	}
 	
 	return 0;
