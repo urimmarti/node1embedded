@@ -15,47 +15,11 @@
 #include "io_board.h"
 #include "can.h"
 #include "mcp2515.h"
+#include "menu.h"
 #include <avr/io.h>
 #include <util/delay.h>
 #include <stdlib.h>
 
-// Definición de la función de prueba de la SRAM
-void SRAM_test(void)
-{
-    volatile char *ext_ram = (char *) 0x1800; // Dirección de inicio de la SRAM
-    uint16_t ext_ram_size = 0x800;           // Tamaño: 2 KiB (0x1800 a 0x1FFF)
-    uint16_t write_errors = 0;
-    uint16_t retrieval_errors = 0;
-
-    printf("\nStarting SRAM test...\n");
-
-    uint16_t seed = rand();
-
-    // Fase 1: Escritura y lectura inmediata
-    srand(seed);
-    for (uint16_t i = 0; i < ext_ram_size; i++) {
-        uint8_t some_value = rand();
-        ext_ram[i] = some_value;
-        uint8_t retreived_value = ext_ram[i];
-        if (retreived_value != some_value) {
-            printf("Write phase error: ext_ram[%4d] = %02X (should be %02X)\n", i, retreived_value, some_value);
-            write_errors++;
-        }
-    }
-
-    // Fase 2: Comprobación de retención
-    srand(seed);
-    for (uint16_t i = 0; i < ext_ram_size; i++) {
-        uint8_t some_value = rand();
-        uint8_t retreived_value = ext_ram[i];
-        if (retreived_value != some_value) {
-            printf("Retrieval phase error: ext_ram[%4d] = %02X (should be %02X)\n", i, retreived_value, some_value);
-            retrieval_errors++;
-        }
-    }
-
-    printf("SRAM test completed with \n%4d errors in write phase and \n%4d errors in retrieval phase\n\n", write_errors, retrieval_errors);
-}
 
 void xmem_init(void) {
 	// 1. Habilitar interfaz de Memoria Externa (XMEM)
@@ -67,15 +31,7 @@ void xmem_init(void) {
 	SFIOR &= ~((1 << XMM1) | (1 << XMM0));
 }
 
-const char* dir_to_string(joystick_dir_t dir) {
-	switch (dir) {
-		case LEFT:    return "LEFT";
-		case RIGHT:   return "RIGHT";
-		case UP:      return "UP";
-		case DOWN:    return "DOWN";
-		default:      return "NEUTRAL";
-	}
-}
+
 
 
 // Definimos los streams globales
@@ -92,11 +48,11 @@ void stdout_redirect(stdout_target_t target) {
 }
 
 
-
 int main(void) {
 	// 1. Inicialización de periféricos generales del sistema
 	xmem_init();
 	UART_Init(MYUBRR);
+	spi_init();
 	oled_init();
 	joystick_init();
 
@@ -126,7 +82,35 @@ int main(void) {
 		.data = {joystick_data.joy_x,joystick_data.joy_y, joystick_data.slider_x, joystick_data.slider_y}
 	};
 	
+	uint8_t last_recorded_goals = 0;
+	uint8_t current_match_goals = 0;
+	
+	stdout_redirect(STDOUT_OLED);
+	menu_update_display();
+
+/*
+	// 3. Bucle principal no bloqueante
 	while (1) {
+		// Leer datos de navegación desde la IO Board vía SPI
+		spi_select_slave(SPI_SLAVE_IO);
+		spi_write_byte(0x04);
+		spi_read_byte(); // Ignorar byte 'right'
+		spi_read_byte(); // Ignorar byte 'left'
+		uint8_t nav_val = spi_read_byte(); // Byte 'nav'
+		spi_deselect_slave(SPI_SLAVE_IO);
+		stdout_redirect(STDOUT_UART);
+		printf("nav val %d\r\n", nav_val);
+
+		// Actualizar FSM y OLED con la nueva lectura
+		stdout_redirect(STDOUT_OLED);
+		menu_update(nav_val);
+
+		// Muestreo periódico de 500 ms
+		_delay_ms(300);
+	}*/
+	while (1) {
+	
+		
 		joystick_data = adc_read_all();
 		// 1. Enviar mensaje del Nodo 1 al Nodo 2
 		send_joystick_msg.data[0] = joystick_data.joy_x;
@@ -134,17 +118,46 @@ int main(void) {
 		send_joystick_msg.data[2] = joystick_data.slider_x;
 		send_joystick_msg.data[3] = joystick_data.slider_y;
 		
+		stdout_redirect(STDOUT_UART);
 		can_send(&send_joystick_msg);
 		printf("-> Nodo 1 envió mensaje CAN\n");
-		//printf("X: %d\nY: %d\n", &joystick_data.joy_x, &joystick_data.joy_y);
+		printf("X: %d\nY: %d\n", &joystick_data.joy_x, &joystick_data.joy_y);
+		
+		stdout_redirect(STDOUT_OLED);
 
 		// 2. Comprobar si el Nodo 2 nos ha enviado algo
+		uint8_t goal_changed_flag = 0;
 		if (can_receive(&recv_msg)) {
-			printf("<- ¡Nodo 1 recibió mensaje! ID: %d, Data: {%d, %d, %d}\n",
-			recv_msg.id, recv_msg.data[0], recv_msg.data[1], recv_msg.data[2]);
+			// Suponiendo que el ID 2 trae los goles en el primer byte (data[0])
+			if (recv_msg.id == 2) {
+				uint8_t incoming_goals = recv_msg.data[0];
+				
+				// Si estamos jugando y los goles han cambiado respecto a la última lectura:
+				if (is_in_game() && (incoming_goals != last_recorded_goals)) {
+					current_match_goals = incoming_goals;
+					last_recorded_goals = incoming_goals;
+					goal_changed_flag = 1; // Activamos el booleano para actualizar OLED
+				}
+			}
 		}
 
+		// C. Leer el estado del 'nav' desde la IO Board en esta iteración
+		uint8_t nav_val = menu_read_nav_raw();
+
+		// D. Si estamos saliendo de la partida (cuando is_in_game pasa a 0),
+		// reseteamos el contador local de goles para la próxima vez.
+		if (!is_in_game()) {
+			last_recorded_goals = 0;
+			current_match_goals = 0;
+		}
+
+		// E. Llamar a la función centralizada en menu.c pasando el nav y el estado del gol
+		handle_nav_and_game(nav_val, goal_changed_flag, current_match_goals);
+
+		// Pequeña pausa del bucle principal
 		_delay_ms(50);
+		
+
 	}
 	
 	return 0;
