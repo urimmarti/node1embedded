@@ -19,6 +19,7 @@
 #include <avr/io.h>
 #include <util/delay.h>
 #include <stdlib.h>
+#include <avr/interrupt.h>
 
 
 void xmem_init(void) {
@@ -52,6 +53,7 @@ int main(void) {
 	// 1. Inicialización de periféricos generales del sistema
 	xmem_init();
 	UART_Init(MYUBRR);
+	sei();
 	spi_init();
 	oled_init();
 	joystick_init();
@@ -121,7 +123,11 @@ int main(void) {
 		stdout_redirect(STDOUT_UART);
 		can_send(&send_joystick_msg);
 		printf("-> Nodo 1 envió mensaje CAN\n");
-		printf("X: %d\nY: %d\n", &joystick_data.joy_x, &joystick_data.joy_y);
+		printf("X: %d\nY: %d\n", joystick_data.joy_x, joystick_data.joy_y);
+		uint8_t cam_x = 0, cam_y = 0;
+		if (camera_get_target(&cam_x, &cam_y)) {
+			printf("-> CAM RX [X: %3d, Y: %3d]\n", cam_x, cam_y);
+		}
 		
 		stdout_redirect(STDOUT_OLED);
 
