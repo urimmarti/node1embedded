@@ -18,6 +18,6 @@ void UART_Transmit(unsigned char data);
 unsigned char UART_Receive(void);
 int uart_putchar(char c, FILE *stream);
 int uart_getchar(FILE *stream);
-bool camera_get_target(uint8_t *target_x, uint8_t *target_y);
+bool camera_get_target(uint16_t *target_x, uint16_t *target_y);
 
 #endif

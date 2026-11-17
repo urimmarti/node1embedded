@@ -3,8 +3,9 @@
 #include <avr/interrupt.h>
 #include <stdbool.h>
 
-static volatile uint8_t g_camera_x = 0;
-static volatile uint8_t g_camera_y = 0;
+#define CAMERA_NO_BALL 0xFFFF
+static volatile uint16_t g_camera_x = 0;
+static volatile uint16_t g_camera_y = 0;
 static volatile bool    g_new_camera_data = false;
 
 void UART_Init(unsigned int ubrr) {
@@ -49,11 +50,14 @@ int uart_getchar(FILE *stream) {
 	return 0; // Non-blocking stub
 }
 
-bool camera_get_target(uint8_t *target_x, uint8_t *target_y) {
+bool camera_get_target(uint16_t *target_x, uint16_t *target_y) {
 	if (g_new_camera_data) {
+		// Clear flag first (or briefly disable UART RX interrupt on 8-bit MCUs
+		// so a 16-bit read cannot be torn mid-update)
+		g_new_camera_data = false;
 		*target_x = g_camera_x;
 		*target_y = g_camera_y;
-		g_new_camera_data = false;
+		//printf("uart test: %d %d\r\n", g_camera_x,g_camera_y);
 		return true;
 	}
 	return false;
@@ -72,39 +76,55 @@ ISR(USART_RX_vect)
 
 	typedef enum {
 		STATE_WAIT_HEADER,
-		STATE_READ_X,
-		STATE_READ_Y,
+		STATE_READ_X_HIGH,
+		STATE_READ_X_LOW,
+		STATE_READ_Y_HIGH,
+		STATE_READ_Y_LOW,
 		STATE_READ_CRC
 	} PacketState;
 
 	static PacketState state = STATE_WAIT_HEADER;
-	static uint8_t rx_x = 0;
-	static uint8_t rx_y = 0;
+	static uint8_t rx_x_high = 0;
+	static uint8_t rx_x_low  = 0;
+	static uint8_t rx_y_high = 0;
+	static uint8_t rx_y_low  = 0;
 
 	switch (state) {
 		case STATE_WAIT_HEADER:
 		if (byte == 0xFF) {
-			state = STATE_READ_X;
+			state = STATE_READ_X_HIGH;
 		}
 		break;
 
-		case STATE_READ_X:
-		rx_x = byte;
-		state = STATE_READ_Y;
+		case STATE_READ_X_HIGH:
+		rx_x_high = byte;
+		state = STATE_READ_X_LOW;
 		break;
 
-		case STATE_READ_Y:
-		rx_y = byte;
+		case STATE_READ_X_LOW:
+		rx_x_low = byte;
+		state = STATE_READ_Y_HIGH;
+		break;
+
+		case STATE_READ_Y_HIGH:
+		rx_y_high = byte;
+		state = STATE_READ_Y_LOW;
+		break;
+
+		case STATE_READ_Y_LOW:
+		rx_y_low = byte;
 		state = STATE_READ_CRC;
 		break;
 
-		case STATE_READ_CRC:
-		if (byte == ((rx_x ^ rx_y ^ 0xFF) & 0xFF)) {
-			g_camera_x = rx_x;
-			g_camera_y = rx_y;
-			g_new_camera_data = true;
+		case STATE_READ_CRC: {
+			uint8_t expected_crc = (0xFF ^ rx_x_high ^ rx_x_low ^ rx_y_high ^ rx_y_low) & 0xFF;
+			if (byte == expected_crc) {
+				g_camera_x = ((uint16_t)rx_x_high << 8) | rx_x_low;
+				g_camera_y = ((uint16_t)rx_y_high << 8) | rx_y_low;
+				g_new_camera_data = true;
+			}
+			state = STATE_WAIT_HEADER;
+			break;
 		}
-		state = STATE_WAIT_HEADER;
-		break;
 	}
 }

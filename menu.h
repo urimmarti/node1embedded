@@ -16,7 +16,7 @@ uint8_t menu_read_nav_raw(void);
 void menu_update_display(void);
 
 // Función centralizada que maneja la lógica de pantallas según el input
-void handle_nav_and_game(uint8_t nav_val, uint8_t goal_changed, uint8_t current_goals);
+void handle_nav_and_game(uint8_t nav_val, uint8_t goal_changed, uint8_t current_goals, bool camera_mode);
 
 // Control de estados y best score
 int8_t is_in_game(void);

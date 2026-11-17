@@ -39,8 +39,9 @@ adc_raw_data_t adc_read_all(void) {
 	_delay_us(50);
 
 	// 3. Lecturas consecutivas (Auto-Scan avanza canal en cada lectura) 
-	raw.slider_x = *adc_addr; 
-	raw.slider_y = *adc_addr; 
+	uint8_t dummy;
+	raw.solenoid = *adc_addr; 
+	dummy = *adc_addr; //the first value of the address corresponds to an unused value
 	raw.joy_y    = *adc_addr;
 	raw.joy_x    = *adc_addr;
 
@@ -94,9 +95,9 @@ joystick_position_t joystick_process(adc_raw_data_t raw) {
 	return joy;
 }
 
-slider_position_t slider_process(adc_raw_data_t raw) {
+/*slider_position_t slider_process(adc_raw_data_t raw) {
 	slider_position_t slider;
 	slider.x = scale_slider(raw.slider_x);
 	slider.y = scale_slider(raw.slider_y);
 	return slider;
-}
+}*/

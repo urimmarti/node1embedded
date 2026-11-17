@@ -15,11 +15,11 @@ import time
 # UART
 COM_PORT = "COM3"
 BAUD_RATE = 9600
-TX_INTERVAL = 0.050          # 20 Hz maximum
+TX_INTERVAL = 0.020          # 20 Hz maximum
 COORD_MAX = 254              # 0xFF reserved as packet header
 
 # Camera
-CAMERA_INDEX = 2
+CAMERA_INDEX = 1
 
 # White-mask parameters
 DEFAULT_BRIGHTNESS = 224
@@ -93,11 +93,15 @@ def start_uart_reader(ser):
 
 def open_camera():
     """Open the camera."""
-
-    cap = cv2.VideoCapture(
-        CAMERA_INDEX,
-        cv2.CAP_V4L2
-    )
+    for i in range(5):
+        print("camera test",i)
+        cap = cv2.VideoCapture(
+            i,
+            cv2.CAP_DSHOW
+        )
+        if cap.isOpened():
+            break
+        
 
     if not cap.isOpened():
         print("[-] Could not open camera")
@@ -344,12 +348,12 @@ def get_ball_coordinates(ball_contour):
     """
 
     if ball_contour is None:
-        return None, None
+        return -1, -1
 
     moments = cv2.moments(ball_contour)
 
     if moments["m00"] == 0:
-        return None, None
+        return -1, -1
 
     x = int(
         moments["m10"] / moments["m00"]
@@ -396,7 +400,8 @@ def camera_to_uart_coordinates(x, y, frame_width, frame_height):
         x = 0 ... 254
         y = 0 ... 254
     """
-
+    if x == -1 or y == -1:
+        return 255, 255
     x_uart = scale_coordinate(
         x,
         frame_width - 1
@@ -434,11 +439,11 @@ def send_ball_position(ser, x, y):
     if ser:
         ser.write(packet)
 
-    print(
-        f"[PYTHON TX] "
-        f"X={x:3d}, "
-        f"Y={y:3d}"
-    )
+    #print(
+    #    f"[PYTHON TX] "
+    #    f"X={x:3d}, "
+    #    f"Y={y:3d}"
+    #)
 
 
 # ==============================================================================
@@ -581,17 +586,17 @@ def main():
     # Step 1: Connect UART
     # --------------------------------------------------------------------------
     ser = None
-    # ser = connect_uart()
+    ser = connect_uart()
 
-    # if ser is None:
-    #     return
+    if ser is None:
+        return
 
-    # start_uart_reader(ser)
+    start_uart_reader(ser)
 
     # --------------------------------------------------------------------------
     # Step 2: Open camera
     # --------------------------------------------------------------------------
-
+    print("camera test");
     cap = open_camera()
 
     if cap is None:
@@ -673,38 +678,41 @@ def main():
             # Step 9: If ball exists -> convert and send coordinates
             # ------------------------------------------------------------------
 
-            if ball_x is not None and ball_y is not None:
+            ball_position = (
+                ball_x,
+                ball_y
+            )
 
-                ball_position = (
-                    ball_x,
-                    ball_y
-                )
+            x_uart, y_uart = camera_to_uart_coordinates(
+                ball_x,
+                ball_y,
+                width,
+                height
+            )
 
-                x_uart, y_uart = camera_to_uart_coordinates(
-                    ball_x,
-                    ball_y,
-                    width,
-                    height
-                )
+            uart_position = (
+                x_uart,
+                y_uart
+            )
+            # ------------------------------------------------------------------
+            # Step 10: UART transmission rate limiting
+            # ------------------------------------------------------------------
 
-                uart_position = (
+            current_time = time.time()
+
+            if current_time - last_tx_time >= TX_INTERVAL:
+
+                send_ball_position(
+                    ser,
                     x_uart,
                     y_uart
                 )
 
-                # UART transmission rate limiting
-                current_time = time.time()
-
-                if current_time - last_tx_time >= TX_INTERVAL:
-
-                    send_ball_position(
-                        ser,
-                        x_uart,
-                        y_uart
-                    )
-
-                    last_tx_time = current_time
-
+                last_tx_time = current_time
+            # ------------------------------------------------------------------            
+            # Step 11:
+            # ------------------------------------------------------------------
+            if ball_x != -1 and ball_y != -1:
                 draw_ball(
                     frame,
                     ball_contour,
@@ -714,13 +722,11 @@ def main():
                     y_uart,
                     ball_area_percent
                 )
-
             else:
-
                 draw_no_ball(frame)
 
             # ------------------------------------------------------------------
-            # Step 10: Display results
+            # Step 12: Display results
             # ------------------------------------------------------------------
 
             heatmap = cv2.applyColorMap(

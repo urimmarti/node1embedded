@@ -34,7 +34,7 @@ void menu_update_display(void) {
 	}
 
 	oled_pos(0, 0);
-	printf("=== MENU PRINCIPAL ===");
+	printf(" MENU PRINCIPAL ");
 
 	for (uint8_t i = 0; i < NUM_MENU_ITEMS; i++) {
 		oled_pos(2 + i, 0);
@@ -47,7 +47,7 @@ void menu_update_display(void) {
 }
 
 // Función central para gestionar la navegación y el estado del juego por iteración
-void handle_nav_and_game(uint8_t nav_val, uint8_t goal_changed, uint8_t current_goals) {
+void handle_nav_and_game(uint8_t nav_val, uint8_t goal_changed, uint8_t current_goals, bool camera_mode) {
 	
 	// CASO 1: ESTAMOS EN EL MENÚ PRINCIPAL
 	if (!in_game_mode) {
@@ -79,11 +79,17 @@ void handle_nav_and_game(uint8_t nav_val, uint8_t goal_changed, uint8_t current_
 				in_game_mode = 1;
 				
 				oled_pos(0, 0);
-				printf("=== MODO JUGADOR ===");
+				if (camera_mode){
+					printf("CAMERA MODE");
+				}else{
+					printf("JOYSTICK MODE");
+				}
+				
 				oled_pos(2, 0);
-				printf("Goles: 0");
+				printf("Goals: 0");
 				oled_pos(4, 0);
-				printf("Pulsa SR6 para salir");
+				printf("SL6 to exit");
+
 			}
 			else if (current_selection == 1) {
 				// Opción 1: Best Score
@@ -107,8 +113,8 @@ void handle_nav_and_game(uint8_t nav_val, uint8_t goal_changed, uint8_t current_
 		// En juego comprobamos si se pulsa SR6 para salir
 		spi_select_slave(SPI_SLAVE_IO);
 		spi_write_byte(0x04);
-		uint8_t right_val = spi_read_byte(); // Leemos el byte right[cite: 2]
-		spi_read_byte();
+		uint8_t left_val = spi_read_byte(); // Leemos el byte right[cite: 2]
+		uint8_t right_val = spi_read_byte();
 		spi_read_byte();
 		spi_deselect_slave(SPI_SLAVE_IO);
 

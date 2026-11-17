@@ -24,8 +24,7 @@ typedef enum {
 typedef struct {
 	uint8_t joy_x;
 	uint8_t joy_y;
-	uint8_t slider_x;
-	uint8_t slider_y;
+	uint8_t solenoid;
 } adc_raw_data_t;
 
 // Estado procesado del Joystick
